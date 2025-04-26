@@ -23,7 +23,7 @@ except ImportError:
 os.environ['OLLAMA_NUM_PARALLEL'] = '5'  # 設置為5個並行請求
 
 class TranslationThread(threading.Thread):
-    def __init__(self, file_path, source_lang, target_lang, model_name, parallel_requests, progress_callback, complete_callback, debug_mode=False):
+    def __init__(self, file_path, source_lang, target_lang, model_name, parallel_requests, progress_callback, complete_callback, debug_mode=False, replace_original=False):
         threading.Thread.__init__(self)
         self.file_path = file_path
         self.source_lang = source_lang
@@ -33,7 +33,8 @@ class TranslationThread(threading.Thread):
         self.progress_callback = progress_callback
         self.complete_callback = complete_callback
         self.debug_mode = debug_mode
-        self.app = None  # 添加 app 引用
+        self.app = None
+        self.replace_original = replace_original  # 新增取代原始檔案的參數
 
     def set_app(self, app):
         """設置對 App 實例的引用"""
@@ -125,6 +126,11 @@ class TranslationThread(threading.Thread):
             return None
 
     def get_output_path(self):
+        """獲取輸出路徑"""
+        # 如果選擇取代原始檔案，直接返回原始檔案路徑
+        if self.replace_original:
+            return self.file_path
+
         # 獲取原始檔案的目錄和檔名
         dir_name, file_name = os.path.split(self.file_path)
         name, ext = os.path.splitext(file_name)
@@ -181,6 +187,7 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.clean_mode_var = tk.BooleanVar(value=False)
         self.debug_mode_var = tk.BooleanVar(value=False)
         self.auto_clean_workspace_var = tk.BooleanVar(value=True)
+        self.replace_original_var = tk.BooleanVar(value=False)  # 新增取代原始檔案的變數
 
         self.create_widgets()
         self.create_clean_menu()
@@ -279,6 +286,14 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         )
         self.auto_clean_workspace_check.pack(side=tk.LEFT, padx=10)
 
+        # 取代原始檔案複選框
+        self.replace_original_check = ttk.Checkbutton(
+            checkbox_frame, 
+            text="取代原始檔案", 
+            variable=self.replace_original_var
+        )
+        self.replace_original_check.pack(side=tk.LEFT, padx=10)
+
         # 翻譯按鈕
         self.translate_button = ttk.Button(self, text="開始翻譯", command=self.start_translation)
         self.translate_button.pack(pady=10)
@@ -376,6 +391,12 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
             messagebox.showwarning("警告", "請先選擇要翻譯的 SRT 檔案")
             return
 
+        # 如果選擇取代原始檔案，詢問使用者確認
+        if self.replace_original_var.get():
+            if not messagebox.askyesno("確認", 
+                "您選擇了取代原始檔案模式。\n這將會直接覆蓋原始的 SRT 檔案。\n是否確定要繼續？"):
+                return
+
         # 如果開啟了清理模式，先清理檔案
         if self.clean_mode_var.get():
             self.status_label.config(text="正在清理檔案...")
@@ -461,8 +482,10 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
                 self.parallel_requests.get(),
                 self.update_progress,
                 self.file_translated,
-                self.debug_mode_var.get()
+                self.debug_mode_var.get(),
+                self.replace_original_var.get()  # 傳遞取代原始檔案的設定
             )
+            thread.set_app(self)
             thread.start()
 
         self.status_label.config(text=f"正在翻譯 {total_files} 個檔案...")

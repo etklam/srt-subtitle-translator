@@ -33,6 +33,11 @@ class TranslationThread(threading.Thread):
         self.progress_callback = progress_callback
         self.complete_callback = complete_callback
         self.debug_mode = debug_mode
+        self.app = None  # 添加 app 引用
+
+    def set_app(self, app):
+        """設置對 App 實例的引用"""
+        self.app = app
 
     def run(self):
         subs = pysrt.open(self.file_path)
@@ -242,8 +247,8 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.model_combo.grid(row=0, column=1)
 
         ttk.Label(model_frame, text="並行請求數:").grid(row=0, column=2)
-        self.parallel_requests = ttk.Combobox(model_frame, values=["1", "2", "3", "4", "5"])
-        self.parallel_requests.set("5")
+        self.parallel_requests = ttk.Combobox(model_frame, values=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "15", "20"])
+        self.parallel_requests.set("10")
         self.parallel_requests.grid(row=0, column=3)
 
         # Checkbox 框架

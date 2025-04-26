@@ -146,17 +146,24 @@ class TranslationThread(threading.Thread):
         return base_path
 
     def handle_file_conflict(self, file_path):
+        """處理檔案衝突"""
         # 使用 Queue 在線程間通信
         queue = Queue()
+        
         # 請求主線程顯示對話框
-        self.progress_callback(-1, -1, {"type": "file_conflict", "path": file_path, "queue": queue})
+        self.progress_callback(-1, -1, {
+            "type": "file_conflict",
+            "path": file_path,
+            "queue": queue
+        })
+        
         # 等待使用者回應
         return queue.get()
 
 class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
     def __init__(self):
         super().__init__()
-
+        self.countdown_window = None
         self.title("SRT 字幕翻譯器")
         self.geometry("600x600")  # 增加視窗高度
 
@@ -164,6 +171,11 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         if TKDND_AVAILABLE:
             self.drop_target_register(DND_FILES)
             self.dnd_bind('<<Drop>>', self.handle_drop)
+
+        # 初始化變數
+        self.clean_mode_var = tk.BooleanVar(value=False)
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        self.auto_clean_workspace_var = tk.BooleanVar(value=True)
 
         self.create_widgets()
         self.create_clean_menu()
@@ -181,9 +193,17 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
                 messagebox.showwarning("警告", f"檔案 {file} 不是 SRT 格式，已略過")
 
     def create_widgets(self):
+        # 按鈕框架
+        button_frame = ttk.Frame(self)
+        button_frame.pack(pady=10)
+
         # 檔案選擇按鈕
-        self.file_button = ttk.Button(self, text="選擇 SRT 檔案", command=self.select_files)
-        self.file_button.pack(pady=10)
+        self.file_button = ttk.Button(button_frame, text="選擇 SRT 檔案", command=self.select_files)
+        self.file_button.pack(side=tk.LEFT, padx=5)
+
+        # 文件夾批量新增按鈕
+        self.folder_button = ttk.Button(button_frame, text="文件夾批量新增", command=self.select_folder)
+        self.folder_button.pack(side=tk.LEFT, padx=5)
 
         # 檔案列表框架
         list_frame = ttk.Frame(self)
@@ -226,23 +246,33 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.parallel_requests.set("5")
         self.parallel_requests.grid(row=0, column=3)
 
+        # Checkbox 框架
+        checkbox_frame = ttk.Frame(self)
+        checkbox_frame.pack(pady=5)
+
         # 清理模式複選框
-        self.clean_mode_var = tk.BooleanVar(value=False)
         self.clean_mode_check = ttk.Checkbutton(
-            self, 
+            checkbox_frame, 
             text="翻譯前自動清理", 
             variable=self.clean_mode_var
         )
-        self.clean_mode_check.pack(pady=5)
+        self.clean_mode_check.pack(side=tk.LEFT, padx=10)
 
         # 調試模式複選框
-        self.debug_mode_var = tk.BooleanVar(value=False)
         self.debug_mode_check = ttk.Checkbutton(
-            self, 
+            checkbox_frame, 
             text="調試模式", 
             variable=self.debug_mode_var
         )
-        self.debug_mode_check.pack(pady=5)
+        self.debug_mode_check.pack(side=tk.LEFT, padx=10)
+
+        # 自動清理工作區複選框
+        self.auto_clean_workspace_check = ttk.Checkbutton(
+            checkbox_frame, 
+            text="翻譯後清理工作區", 
+            variable=self.auto_clean_workspace_var
+        )
+        self.auto_clean_workspace_check.pack(side=tk.LEFT, padx=10)
 
         # 翻譯按鈕
         self.translate_button = ttk.Button(self, text="開始翻譯", command=self.start_translation)
@@ -268,6 +298,61 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         files = filedialog.askopenfilenames(filetypes=[("SRT files", "*.srt")])
         for file in files:
             self.file_list.insert(tk.END, file)
+
+    def select_folder(self):
+        """選擇文件夾並批量添加 SRT 檔案"""
+        folder_path = filedialog.askdirectory(title="選擇包含 SRT 檔案的文件夾")
+        if not folder_path:
+            return
+
+        # 計數器
+        added_count = 0
+        skipped_count = 0
+        backup_count = 0
+
+        # 遍歷文件夾中的所有檔案
+        for root, dirs, files in os.walk(folder_path):
+            # 跳過 backup 目錄
+            if 'backup' in dirs:
+                dirs.remove('backup')  # 這會讓 os.walk 跳過 backup 目錄
+            
+            # 檢查當前目錄是否為 backup 目錄
+            if os.path.basename(root) == 'backup':
+                backup_count += len([f for f in files if f.lower().endswith('.srt')])
+                continue
+                
+            for file in files:
+                if file.lower().endswith('.srt'):
+                    # 跳過中文翻譯檔案
+                    if file.lower().endswith('.zh_tw.srt'):
+                        skipped_count += 1
+                        continue
+                    
+                    full_path = os.path.join(root, file)
+                    
+                    # 檢查是否已在列表中
+                    already_exists = False
+                    for i in range(self.file_list.size()):
+                        if self.file_list.get(i) == full_path:
+                            already_exists = True
+                            skipped_count += 1
+                            break
+                    
+                    if not already_exists:
+                        self.file_list.insert(tk.END, full_path)
+                        added_count += 1
+
+        # 顯示結果
+        message = f"已添加 {added_count} 個 SRT 檔案"
+        if skipped_count > 0 or backup_count > 0:
+            message += f"\n已跳過 {skipped_count} 個檔案（包含已翻譯檔案或重複檔案）"
+            if backup_count > 0:
+                message += f"\n已跳過 {backup_count} 個備份目錄中的檔案"
+        
+        if added_count > 0:
+            messagebox.showinfo("完成", message)
+        else:
+            messagebox.showwarning("提示", "未找到可添加的 SRT 檔案")
 
     def get_model_list(self):
         url = "http://localhost:11434/v1/models"
@@ -358,9 +443,10 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
 
         # 重置進度條
         self.progress_bar['value'] = 0
+        total_files = self.file_list.size()
         
         # 開始翻譯
-        for i in range(self.file_list.size()):
+        for i in range(total_files):
             file_path = self.file_list.get(i)
             thread = TranslationThread(
                 file_path, 
@@ -370,28 +456,20 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
                 self.parallel_requests.get(),
                 self.update_progress,
                 self.file_translated,
-                self.debug_mode_var.get()  # 傳遞調試模式狀態
+                self.debug_mode_var.get()
             )
             thread.start()
 
-        self.status_label.config(text=f"正在翻譯 {self.file_list.size()} 個檔案...")
+        self.status_label.config(text=f"正在翻譯 {total_files} 個檔案...")
 
     def update_progress(self, current, total, extra_data=None):
+        """更新進度"""
         if extra_data and extra_data.get("type") == "file_conflict":
             # 在主線程中顯示對話框
-            response = messagebox.askyesnocancel(
-                "檔案已存在",
-                f"檔案 {extra_data['path']} 已存在。\n是否覆蓋？\n'是' = 覆蓋\n'否' = 重新命名\n'取消' = 跳過",
-                icon="warning"
+            result = self.show_countdown_dialog(
+                f"檔案 {extra_data['path']} 已存在。\n請選擇處理方式：\n\n'覆蓋' = 覆蓋現有檔案\n'重新命名' = 自動重新命名\n'跳過' = 跳過此檔案",
+                countdown=5
             )
-            
-            # 轉換回應為字符串
-            if response is True:
-                result = "overwrite"
-            elif response is False:
-                result = "rename"
-            else:  # response is None
-                result = "skip"
             
             # 將結果發送回翻譯線程
             extra_data["queue"].put(result)
@@ -405,8 +483,29 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
             self.update_idletasks()
 
     def file_translated(self, message):
+        """處理檔案翻譯完成的回調"""
         current_text = self.status_label.cget("text")
         self.status_label.config(text=f"{current_text}\n{message}")
+        
+        # 檢查是否所有檔案都已翻譯完成
+        if "翻譯完成" in message:
+            # 從檔案列表中移除已翻譯的檔案
+            if self.auto_clean_workspace_var.get():
+                for i in range(self.file_list.size()):
+                    if os.path.basename(self.file_list.get(i)) in message:
+                        self.file_list.delete(i)
+                        break
+            
+            # 如果檔案列表為空且啟用了自動清理，顯示完成訊息
+            if self.file_list.size() == 0 and self.auto_clean_workspace_var.get():
+                self.status_label.config(text="所有檔案翻譯完成！")
+                self.progress_bar['value'] = 0
+                messagebox.showinfo("完成", "所有檔案翻譯完成！工作區已清理。")
+            # 如果檔案列表不為空或未啟用自動清理，只顯示翻譯完成訊息
+            elif not self.auto_clean_workspace_var.get():
+                self.status_label.config(text="所有檔案翻譯完成！")
+                self.progress_bar['value'] = 0
+                messagebox.showinfo("完成", "所有檔案翻譯完成！")
 
     def show_context_menu(self, event):
         """顯示右鍵選單"""
@@ -543,6 +642,94 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.progress_bar['value'] = 0
         self.status_label.config(text="清理完成！")
         messagebox.showinfo("完成", "所有選中的 SRT 檔案已清理完成！\n原始檔案已備份至 backup 資料夾。")
+
+    def show_countdown_dialog(self, message, countdown=5):
+        """顯示帶有倒計時的對話框"""
+        # 創建新視窗
+        countdown_window = tk.Toplevel(self)
+        countdown_window.title("檔案已存在")
+        countdown_window.geometry("400x200")
+        countdown_window.transient(self)  # 設置為主視窗的子視窗
+        countdown_window.grab_set()  # 模態視窗
+        countdown_window.resizable(False, False)  # 禁止調整視窗大小
+        
+        # 保存視窗引用
+        self.countdown_window = countdown_window
+        self.dialog_result = None
+
+        # 創建主框架
+        main_frame = ttk.Frame(countdown_window, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 添加訊息標籤
+        message_label = ttk.Label(main_frame, text=message, wraplength=350, justify="center")
+        message_label.pack(pady=(0, 10))
+        
+        # 添加倒計時標籤
+        self.countdown_label = ttk.Label(main_frame, text=f"{countdown} 秒後自動重新命名", font=("Arial", 10, "bold"))
+        self.countdown_label.pack(pady=(0, 20))
+        
+        # 添加按鈕框架
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(0, 10))
+        
+        # 設置按鈕樣式
+        style = ttk.Style()
+        style.configure("Action.TButton", padding=5)
+        
+        # 添加按鈕
+        overwrite_btn = ttk.Button(
+            button_frame, 
+            text="覆蓋", 
+            style="Action.TButton",
+            command=lambda: self.set_dialog_result("overwrite")
+        )
+        overwrite_btn.pack(side=tk.LEFT, padx=5)
+        
+        rename_btn = ttk.Button(
+            button_frame, 
+            text="重新命名", 
+            style="Action.TButton",
+            command=lambda: self.set_dialog_result("rename")
+        )
+        rename_btn.pack(side=tk.LEFT, padx=5)
+        
+        skip_btn = ttk.Button(
+            button_frame, 
+            text="跳過", 
+            style="Action.TButton",
+            command=lambda: self.set_dialog_result("skip")
+        )
+        skip_btn.pack(side=tk.LEFT, padx=5)
+        
+        # 開始倒計時
+        def update_countdown():
+            nonlocal countdown
+            if countdown > 0 and self.dialog_result is None:
+                countdown -= 1
+                self.countdown_label.config(text=f"{countdown} 秒後自動重新命名")
+                countdown_window.after(1000, update_countdown)
+            elif self.dialog_result is None:
+                self.set_dialog_result("rename")
+        
+        # 置中顯示視窗
+        countdown_window.update_idletasks()
+        width = countdown_window.winfo_width()
+        height = countdown_window.winfo_height()
+        x = (countdown_window.winfo_screenwidth() // 2) - (width // 2)
+        y = (countdown_window.winfo_screenheight() // 2) - (height // 2)
+        countdown_window.geometry(f"{width}x{height}+{x}+{y}")
+        
+        countdown_window.after(1000, update_countdown)
+        countdown_window.wait_window()
+        return self.dialog_result
+
+    def set_dialog_result(self, result):
+        """設置對話框結果並關閉視窗"""
+        self.dialog_result = result
+        if self.countdown_window:
+            self.countdown_window.destroy()
+            self.countdown_window = None
 
 if __name__ == "__main__":
     app = App()

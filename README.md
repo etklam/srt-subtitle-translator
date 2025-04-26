@@ -27,6 +27,8 @@ python main.py
 ## 注意事項
 
 - 確保 Ollama 服務運行中（http://localhost:11434）
+  - 安裝ollama
+  - 在`CMD`中運行`ollama run huihui_ai/aya-expanse-abliterated`, 第一次運行時會下載模型, 第二次會很快 
 - 建議使用 aya 模型
 - 並行請求數建議設為 3
 - 翻譯大量字幕時請耐心等待

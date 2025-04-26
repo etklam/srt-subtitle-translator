@@ -34,7 +34,7 @@ class TranslationThread(threading.Thread):
         self.complete_callback = complete_callback
         self.debug_mode = debug_mode
         self.app = None
-        self.replace_original = replace_original  # 新增取代原始檔案的參數
+        self.replace_original = replace_original
 
     def set_app(self, app):
         """設置對 App 實例的引用"""
@@ -44,6 +44,17 @@ class TranslationThread(threading.Thread):
         subs = pysrt.open(self.file_path)
         total_subs = len(subs)
         batch_size = int(self.parallel_requests)
+
+        # 如果是取代原始檔案模式，先創建備份
+        if self.replace_original:
+            try:
+                backup_path = os.path.join(os.path.dirname(self.file_path), 'backup')
+                if not os.path.exists(backup_path):
+                    os.makedirs(backup_path)
+                backup_file = os.path.join(backup_path, os.path.basename(self.file_path))
+                shutil.copy2(self.file_path, backup_file)
+            except Exception as e:
+                self.complete_callback(f"警告：無法創建備份檔案：{str(e)}")
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -394,7 +405,7 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         # 如果選擇取代原始檔案，詢問使用者確認
         if self.replace_original_var.get():
             if not messagebox.askyesno("確認", 
-                "您選擇了取代原始檔案模式。\n這將會直接覆蓋原始的 SRT 檔案。\n是否確定要繼續？"):
+                "您選擇了取代原始檔案模式。\n這將會直接覆蓋原始的 SRT 檔案。\n原始檔案將會備份到 backup 資料夾。\n是否確定要繼續？"):
                 return
 
         # 如果開啟了清理模式，先清理檔案
@@ -408,14 +419,13 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
             for i in range(self.file_list.size()):
                 input_file = self.file_list.get(i)
                 try:
-                    # 創建備份目錄
-                    backup_path = os.path.join(os.path.dirname(input_file), 'backup')
-                    self.ensure_backup_dir(backup_path)
-                    
-                    # 備份原始檔案
-                    backup_file = os.path.join(backup_path, os.path.basename(input_file))
-                    shutil.copy2(input_file, backup_file)
-                    
+                    # 只在取代原始檔案模式下創建備份
+                    if self.replace_original_var.get():
+                        backup_path = os.path.join(os.path.dirname(input_file), 'backup')
+                        self.ensure_backup_dir(backup_path)
+                        backup_file = os.path.join(backup_path, os.path.basename(input_file))
+                        shutil.copy2(input_file, backup_file)
+
                     # 清理檔案
                     with open(input_file, 'r', encoding='utf-8') as f:
                         lines = f.readlines()

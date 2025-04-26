@@ -7,6 +7,9 @@ import json
 import urllib.request
 import asyncio
 import threading
+from queue import Queue  # 添加 Queue 的導入
+import re
+import shutil
 
 # 嘗試導入 tkinterdnd2，如果失敗則使用基本的 tkinter
 try:
@@ -20,7 +23,7 @@ except ImportError:
 os.environ['OLLAMA_NUM_PARALLEL'] = '5'  # 設置為5個並行請求
 
 class TranslationThread(threading.Thread):
-    def __init__(self, file_path, source_lang, target_lang, model_name, parallel_requests, progress_callback, complete_callback):
+    def __init__(self, file_path, source_lang, target_lang, model_name, parallel_requests, progress_callback, complete_callback, debug_mode=False):
         threading.Thread.__init__(self)
         self.file_path = file_path
         self.source_lang = source_lang
@@ -29,6 +32,7 @@ class TranslationThread(threading.Thread):
         self.parallel_requests = parallel_requests
         self.progress_callback = progress_callback
         self.complete_callback = complete_callback
+        self.debug_mode = debug_mode
 
     def run(self):
         subs = pysrt.open(self.file_path)
@@ -45,6 +49,10 @@ class TranslationThread(threading.Thread):
             
             for sub, result in zip(batch, results):
                 if result:
+                    if self.debug_mode:
+                        print(f"\n原始文本: {sub.text}")
+                        print(f"翻譯結果: {result}")
+                        print("-" * 50)
                     sub.text = result
                 
             self.progress_callback(min(i+batch_size, total_subs), total_subs)
@@ -158,6 +166,7 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
             self.dnd_bind('<<Drop>>', self.handle_drop)
 
         self.create_widgets()
+        self.create_clean_menu()
 
     def handle_drop(self, event):
         """處理檔案拖放"""
@@ -224,6 +233,24 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.translate_button = ttk.Button(self, text="開始翻譯", command=self.start_translation)
         self.translate_button.pack(pady=10)
 
+        # 清理模式複選框
+        self.clean_mode_var = tk.BooleanVar(value=False)
+        self.clean_mode_check = ttk.Checkbutton(
+            self, 
+            text="翻譯前自動清理", 
+            variable=self.clean_mode_var
+        )
+        self.clean_mode_check.pack(pady=5)
+        
+        # 調試模式複選框
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        self.debug_mode_check = ttk.Checkbutton(
+            self, 
+            text="調試模式", 
+            variable=self.debug_mode_var
+        )
+        self.debug_mode_check.pack(pady=5)
+        
         # 進度條
         self.progress_bar = ttk.Progressbar(self, length=400, mode='determinate')
         self.progress_bar.pack(pady=10)
@@ -249,8 +276,85 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         return []
 
     def start_translation(self):
+        """開始翻譯"""
+        if not self.file_list.size():
+            messagebox.showwarning("警告", "請先選擇要翻譯的 SRT 檔案")
+            return
+
+        # 如果開啟了清理模式，先清理檔案
+        if self.clean_mode_var.get():
+            self.status_label.config(text="正在清理檔案...")
+            self.update_idletasks()
+            
+            total_cleaned = 0
+            total_subtitles = 0
+            
+            for i in range(self.file_list.size()):
+                input_file = self.file_list.get(i)
+                try:
+                    # 創建備份目錄
+                    backup_path = os.path.join(os.path.dirname(input_file), 'backup')
+                    self.ensure_backup_dir(backup_path)
+                    
+                    # 備份原始檔案
+                    backup_file = os.path.join(backup_path, os.path.basename(input_file))
+                    shutil.copy2(input_file, backup_file)
+                    
+                    # 清理檔案
+                    with open(input_file, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    new_lines = []
+                    current_subtitle = []
+                    subtitle_number = 1
+                    cleaned_in_file = 0
+                    total_in_file = 0
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            if current_subtitle:
+                                total_in_file += 1
+                                if len(current_subtitle) >= 3 and not re.match(r'^\(\s*[^)]*\s*\)$', current_subtitle[2]):
+                                    current_subtitle[0] = str(subtitle_number)
+                                    new_lines.extend(current_subtitle)
+                                    new_lines.append('')
+                                    subtitle_number += 1
+                                    cleaned_in_file += 1
+                                current_subtitle = []
+                        else:
+                            current_subtitle.append(line)
+                    
+                    if current_subtitle:
+                        total_in_file += 1
+                        if not re.match(r'^\(\s*[^)]*\s*\)$', current_subtitle[2]):
+                            current_subtitle[0] = str(subtitle_number)
+                            new_lines.extend(current_subtitle)
+                            cleaned_in_file += 1
+                    
+                    with open(input_file, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(new_lines))
+                    
+                    total_cleaned += cleaned_in_file
+                    total_subtitles += total_in_file
+                    
+                    # 更新進度
+                    progress = (i + 1) / self.file_list.size() * 100
+                    self.progress_bar['value'] = progress
+                    self.status_label.config(text=f"正在清理檔案 {i+1}/{self.file_list.size()} ({progress:.1f}%)\n已清理 {total_cleaned}/{total_subtitles} 句字幕")
+                    self.update_idletasks()
+                    
+                except Exception as e:
+                    messagebox.showerror("錯誤", f"清理檔案時發生錯誤: {str(e)}")
+                    return
+
+            self.status_label.config(text=f"清理完成！共清理 {total_cleaned}/{total_subtitles} 句字幕\n開始翻譯...")
+            self.update_idletasks()
+
+        # 重置進度條
         self.progress_bar['value'] = 0
-        self.status_label.config(text="")
+        
+        # 開始翻譯
         for i in range(self.file_list.size()):
             file_path = self.file_list.get(i)
             thread = TranslationThread(
@@ -260,7 +364,8 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
                 self.model_combo.get(),
                 self.parallel_requests.get(),
                 self.update_progress,
-                self.file_translated
+                self.file_translated,
+                self.debug_mode_var.get()  # 傳遞調試模式狀態
             )
             thread.start()
 
@@ -344,6 +449,95 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
     def drop_item(self, event):
         """處理項目放開"""
         self.drag_data = {"index": None, "y": 0}
+
+    def create_clean_menu(self):
+        """創建清理選單"""
+        self.menubar = Menu(self)
+        self.config(menu=self.menubar)
+        
+        # 創建檔案選單
+        file_menu = Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="檔案", menu=file_menu)
+        
+        # 添加清理選項
+        file_menu.add_command(label="清理 SRT 檔案", command=self.clean_srt_files)
+        file_menu.add_separator()
+        file_menu.add_command(label="退出", command=self.quit)
+
+    def ensure_backup_dir(self, backup_path):
+        """確保備份目錄存在"""
+        if not os.path.exists(backup_path):
+            os.makedirs(backup_path)
+
+    def toggle_clean_mode(self):
+        """切換清理模式"""
+        if self.clean_mode_var.get():
+            self.status_label.config(text="已啟用翻譯前自動清理功能")
+        else:
+            self.status_label.config(text="已關閉翻譯前自動清理功能")
+
+    def clean_srt_files(self):
+        """清理選中的 SRT 檔案"""
+        # 創建備份目錄
+        backup_path = os.path.join(os.path.dirname(self.file_list.get(0)), 'backup')
+        self.ensure_backup_dir(backup_path)
+
+        # 更新狀態標籤
+        self.status_label.config(text="正在清理檔案...")
+        self.update_idletasks()
+
+        for i in range(self.file_list.size()):
+            input_file = self.file_list.get(i)
+            try:
+                # 備份原始檔案
+                backup_file = os.path.join(backup_path, os.path.basename(input_file))
+                shutil.copy2(input_file, backup_file)
+                
+                with open(input_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                new_lines = []
+                current_subtitle = []
+                subtitle_number = 1
+                
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        if current_subtitle:
+                            # 檢查字幕內容是否只包含括號內的文字
+                            if len(current_subtitle) >= 3 and not re.match(r'^\(\s*[^)]*\s*\)$', current_subtitle[2]):
+                                # 更新字幕編號
+                                current_subtitle[0] = str(subtitle_number)
+                                new_lines.extend(current_subtitle)
+                                new_lines.append('')
+                                subtitle_number += 1
+                            current_subtitle = []
+                    else:
+                        current_subtitle.append(line)
+                
+                # 處理最後一個字幕
+                if current_subtitle and not re.match(r'^\(\s*[^)]*\s*\)$', current_subtitle[2]):
+                    current_subtitle[0] = str(subtitle_number)
+                    new_lines.extend(current_subtitle)
+                
+                # 寫回原始檔案
+                with open(input_file, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(new_lines))
+                    
+                # 更新進度
+                progress = (i + 1) / self.file_list.size() * 100
+                self.progress_bar['value'] = progress
+                self.status_label.config(text=f"正在清理檔案 {i+1}/{self.file_list.size()} ({progress:.1f}%)")
+                self.update_idletasks()
+                
+            except Exception as e:
+                messagebox.showerror("錯誤", f"處理檔案時發生錯誤: {str(e)}")
+                return
+
+        # 完成後重置進度條和狀態
+        self.progress_bar['value'] = 0
+        self.status_label.config(text="清理完成！")
+        messagebox.showinfo("完成", "所有選中的 SRT 檔案已清理完成！\n原始檔案已備份至 backup 資料夾。")
 
 if __name__ == "__main__":
     app = App()

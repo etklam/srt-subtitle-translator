@@ -236,6 +236,9 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.file_list = tk.Listbox(list_frame, width=70, height=10, selectmode=tk.SINGLE)
         self.file_list.pack(fill=tk.BOTH, expand=True)
         
+        # 綁定 Del 鍵事件
+        self.file_list.bind('<Delete>', self.delete_selected_file)
+        
         # 添加滾動條
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.file_list.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -768,6 +771,16 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         if self.countdown_window:
             self.countdown_window.destroy()
             self.countdown_window = None
+
+    def delete_selected_file(self, event=None):
+        """刪除選中的檔案"""
+        try:
+            selected = self.file_list.curselection()
+            if selected:
+                self.file_list.delete(selected)
+                self.status_label.config(text="已從工作區移除選中的檔案")
+        except Exception as e:
+            messagebox.showerror("錯誤", f"移除檔案時發生錯誤：{str(e)}")
 
 if __name__ == "__main__":
     app = App()

@@ -158,7 +158,7 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         super().__init__()
 
         self.title("SRT 字幕翻譯器")
-        self.geometry("600x500")
+        self.geometry("600x600")  # 增加視窗高度
 
         # 只在有 tkinterdnd2 時啟用拖放功能
         if TKDND_AVAILABLE:
@@ -185,23 +185,20 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.file_button = ttk.Button(self, text="選擇 SRT 檔案", command=self.select_files)
         self.file_button.pack(pady=10)
 
+        # 檔案列表框架
+        list_frame = ttk.Frame(self)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
         # 檔案列表
-        self.file_list = tk.Listbox(self, width=70, height=10, selectmode=tk.SINGLE)
-        self.file_list.pack(pady=10)
+        self.file_list = tk.Listbox(list_frame, width=70, height=10, selectmode=tk.SINGLE)
+        self.file_list.pack(fill=tk.BOTH, expand=True)
         
-        # 綁定滑鼠事件
-        self.file_list.bind('<Button-3>', self.show_context_menu)  # 右鍵選單
-        self.file_list.bind('<B1-Motion>', self.drag_item)         # 拖曳
-        self.file_list.bind('<ButtonRelease-1>', self.drop_item)   # 放開
-        
-        # 創建右鍵選單
-        self.context_menu = Menu(self, tearoff=0)
-        self.context_menu.add_command(label="移除", command=self.remove_selected)
-        
-        # 用於追踪拖曳
-        self.drag_data = {"index": None, "y": 0}
-        
-        # 語言選擇
+        # 添加滾動條
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.file_list.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.file_list.configure(yscrollcommand=scrollbar.set)
+
+        # 語言選擇框架
         lang_frame = ttk.Frame(self)
         lang_frame.pack(pady=10)
 
@@ -215,7 +212,7 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.target_lang.set("繁體中文")
         self.target_lang.grid(row=0, column=3)
 
-        # 模型選擇和並行請求數量選擇
+        # 模型選擇框架
         model_frame = ttk.Frame(self)
         model_frame.pack(pady=10)
 
@@ -229,10 +226,6 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
         self.parallel_requests.set("5")
         self.parallel_requests.grid(row=0, column=3)
 
-        # 翻譯按鈕
-        self.translate_button = ttk.Button(self, text="開始翻譯", command=self.start_translation)
-        self.translate_button.pack(pady=10)
-
         # 清理模式複選框
         self.clean_mode_var = tk.BooleanVar(value=False)
         self.clean_mode_check = ttk.Checkbutton(
@@ -241,7 +234,7 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
             variable=self.clean_mode_var
         )
         self.clean_mode_check.pack(pady=5)
-        
+
         # 調試模式複選框
         self.debug_mode_var = tk.BooleanVar(value=False)
         self.debug_mode_check = ttk.Checkbutton(
@@ -250,14 +243,26 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
             variable=self.debug_mode_var
         )
         self.debug_mode_check.pack(pady=5)
+
+        # 翻譯按鈕
+        self.translate_button = ttk.Button(self, text="開始翻譯", command=self.start_translation)
+        self.translate_button.pack(pady=10)
+
+        # 進度條框架
+        progress_frame = ttk.Frame(self)
+        progress_frame.pack(fill=tk.X, padx=20, pady=10)
         
         # 進度條
-        self.progress_bar = ttk.Progressbar(self, length=400, mode='determinate')
-        self.progress_bar.pack(pady=10)
+        self.progress_bar = ttk.Progressbar(progress_frame, length=400, mode='determinate')
+        self.progress_bar.pack(fill=tk.X)
 
+        # 狀態標籤框架
+        status_frame = ttk.Frame(self)
+        status_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
         # 狀態標籤
-        self.status_label = ttk.Label(self, text="", wraplength=550, justify="center")
-        self.status_label.pack(pady=10, fill=tk.X, expand=True)
+        self.status_label = ttk.Label(status_frame, text="", wraplength=550, justify="center")
+        self.status_label.pack(fill=tk.BOTH, expand=True)
 
     def select_files(self):
         files = filedialog.askopenfilenames(filetypes=[("SRT files", "*.srt")])

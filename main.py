@@ -111,7 +111,7 @@ class TranslationThread(threading.Thread):
 正確輸出：
 "我愛你..."
 
-錯誤輸出：
+Incorrect output:
 "翻譯：我愛你..."
 "這句話的意思是：我愛你..."
 "我愛你（這是表達愛意）..."
@@ -122,8 +122,18 @@ class TranslationThread(threading.Thread):
 "您好！我可以協助您翻譯。以下是翻譯結果：「我愛你...」"
 "您要我翻譯什麼內容？請提供需要翻譯的文本，我將嚴格遵守您的要求，只輸出翻譯後的結果。"
 "將以下文本翻譯成繁體中文：「我愛你...」
+"Translation: I love you..."
+"This means: I love you..."
+"I love you (this is an expression of love)..."
+"I can help you translate, this means: I love you (this is an expression of love)..."
+"Hello! I can help you translate. Here is the translation result: 'I love you...'"
+"I cannot translate this sentence"
+"Hello! Here is the translation result: 'I love you...'"
+"Hello! I can assist you with translation. Here is the translation result: 'I love you...'"
+"Please provide the text you want to translate, and I will strictly follow your requirements and only output the translation result."
+"Translate the following text to Traditional Chinese: 'I love you...'"
 """},
-                {"role": "user", "content": f"將以下文本翻譯成{self.target_lang}：\n{text}"}
+                {"role": "user", "content": f"Translate the following text to {self.target_lang}:\n{text}"}
             ],
             "stream": False,
             "temperature": 0.1  # 降低溫度以獲得更穩定的輸出
@@ -145,7 +155,25 @@ class TranslationThread(threading.Thread):
         # 獲取原始檔案的目錄和檔名
         dir_name, file_name = os.path.split(self.file_path)
         name, ext = os.path.splitext(file_name)
-        lang_suffix = {"繁體中文": ".zh_tw", "英文": ".en", "日文": ".jp"}
+        
+        lang_suffix = {
+            "繁體中文": ".zh_tw", 
+            "英文": ".en", 
+            "日文": ".jp", 
+            "韓文": ".ko", 
+            "法文": ".fr", 
+            "德文": ".de", 
+            "西班牙文": ".es", 
+            "義大利文": ".it", 
+            "葡萄牙文": ".pt", 
+            "俄文": ".ru", 
+            "阿拉伯文": ".ar", 
+            "印地文": ".hi", 
+            "印尼文": ".id", 
+            "越南文": ".vi", 
+            "泰文": ".th", 
+            "馬來文": ".ms"
+        }
         # 在原始檔案的相同目錄下創建新檔案
         base_path = os.path.join(dir_name, f"{name}{lang_suffix[self.target_lang]}{ext}")
         
@@ -217,8 +245,8 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
                 "workspace_cleaned": "所有檔案翻譯完成！工作區已清理。",
                 "error": "錯誤",
                 "error_message": "移除檔案時發生錯誤：{}",
-                "source_lang_options": ["Japanese", "Enhlish", "自動偵測"],
-                "target_lang_options": ["繁體中文", "English", "Japanese"],
+                "source_lang_options": ["日文", "英文", "韓文", "法文", "德文", "西班牙文", "義大利文", "葡萄牙文", "俄文", "阿拉伯文", "印地文", "印尼文", "越南文", "泰文", "馬來文", "自動偵測"],
+                "target_lang_options": ["繁體中文", "英文", "日文", "韓文", "法文", "德文", "西班牙文", "義大利文", "葡萄牙文", "俄文", "阿拉伯文", "印地文", "印尼文", "越南文", "泰文", "馬來文"],
                 "switch_language": "Switch to English",
                 "file_conflict_title": "檔案已存在",
                 "file_conflict_message": "檔案 {} 已存在。\n請選擇處理方式：\n\n'覆蓋' = 覆蓋現有檔案\n'重新命名' = 自動重新命名\n'跳過' = 跳過此檔案",
@@ -254,8 +282,8 @@ class App(TkinterDnD.Tk if TKDND_AVAILABLE else tk.Tk):
                 "workspace_cleaned": "All files have been translated! Workspace has been cleaned.",
                 "error": "Error",
                 "error_message": "Error removing file: {}",
-                "source_lang_options": ["Japanese", "English", "Auto Detect"],
-                "target_lang_options": ["Traditional Chinese", "English", "Japanese"],
+                "source_lang_options": ["Japanese", "English", "Korean", "French", "German", "Spanish", "Italian", "Portuguese", "Russian", "Arabic", "Hindi", "Indonesian", "Vietnamese", "Thai", "Malay", "Auto Detect"],
+                "target_lang_options": ["Traditional Chinese", "English", "Japanese", "Korean", "French", "German", "Spanish", "Italian", "Portuguese", "Russian", "Arabic", "Hindi", "Indonesian", "Vietnamese", "Thai", "Malay"],
                 "switch_language": "切換至中文",
                 "file_conflict_title": "File Exists",
                 "file_conflict_message": "File {} already exists.\nPlease choose an action:\n\n'Overwrite' = Replace existing file\n'Rename' = Auto rename\n'Skip' = Skip this file",
